@@ -1,4 +1,4 @@
-// // app/api/image-adjust/route.js
+// app/api/image-adjust/route.js
 // import sharp from 'sharp';
 
 // export async function POST(request) {
@@ -13,12 +13,8 @@
 //       );
 //     }
     
-//     if (!adjustments) {
-//       return Response.json(
-//         { success: false, error: 'No adjustments provided' },
-//         { status: 400 }
-//       );
-//     }
+//     // Set default adjustments if not provided
+//     const adj = adjustments || {};
     
 //     // Extract base64 data from the data URL
 //     const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
@@ -26,80 +22,135 @@
     
 //     // Process image with Sharp
 //     let processedImage = sharp(imageBuffer);
+//     const metadata = await processedImage.metadata();
     
-//     // Apply brightness, contrast, and saturation
-//     if (adjustments.brightness !== 0 || adjustments.contrast !== 0 || adjustments.saturation !== 0) {
+//     console.log('Applying adjustments:', adj);
+
+//     // 1. FIRST apply exposure (this affects the base image before contrast)
+//     if (adj.exposure !== undefined && adj.exposure !== 0) {
+//       const exposureGain = 1 + (adj.exposure / 100);
+//       const exposureBias = -(128 * (exposureGain - 1)) * 0.5;
+      
+//       processedImage = processedImage.linear(exposureGain, exposureBias);
+//       console.log('Applied exposure:', adj.exposure, 'Gain:', exposureGain, 'Bias:', exposureBias);
+//     }
+
+//     // 2. THEN apply brightness, contrast, saturation (contrast works on exposed image)
+//     if (adj.brightness !== undefined || adj.contrast !== undefined || adj.saturation !== undefined) {
 //       processedImage = processedImage.modulate({
-//         brightness: adjustments.brightness !== 0 ? 1 + (adjustments.brightness / 100) : 1,
-//         contrast: adjustments.contrast !== 0 ? 1 + (adjustments.contrast / 100) : 1,
-//         saturation: adjustments.saturation !== 0 ? 1 + (adjustments.saturation / 100) : 1,
+//         brightness: adj.brightness !== undefined ? 1 + (adj.brightness / 100) : 1,
+//         contrast: adj.contrast !== undefined ? 1 + (adj.contrast / 100) : 1,
+//         saturation: adj.saturation !== undefined ? 1 + (adj.saturation / 100) : 1,
 //       });
+//       console.log('Applied modulate - brightness:', adj.brightness, 'contrast:', adj.contrast, 'saturation:', adj.saturation);
 //     }
-    
-//     // Apply exposure
-//     if (adjustments.exposure !== 0) {
-//       const exposure = Math.exp(adjustments.exposure / 100);
-//       processedImage = processedImage.linear(exposure, -(128 * exposure) + 128);
-//     }
-    
-//     // Apply sharpness
-//     if (adjustments.sharpness !== 0) {
-//       const sharpness = adjustments.sharpness / 100;
+
+//     // 3. THEN apply other adjustments
+//     if (adj.sharpness !== undefined && adj.sharpness !== 0) {
+//       const sharpnessIntensity = Math.abs(adj.sharpness) / 100;
+      
 //       processedImage = processedImage.sharpen({
-//         sigma: 1 + sharpness,
+//         sigma: 0.5 + (sharpnessIntensity * 2),
 //         m1: 0,
-//         m2: 5 + (5 * sharpness),
-//         x1: 3 + (2 * sharpness),
+//         m2: 2 + (sharpnessIntensity * 8),
+//         x1: 1 + sharpnessIntensity
 //       });
+//       console.log('Applied sharpness:', adj.sharpness, 'Intensity:', sharpnessIntensity);
 //     }
-    
+
 //     // Apply blur
-//     if (adjustments.blur > 0) {
-//       processedImage = processedImage.blur(adjustments.blur);
+//     if (adj.blur !== undefined && adj.blur > 0) {
+//       processedImage = processedImage.blur(adj.blur);
+//       console.log('Applied blur:', adj.blur);
 //     }
-    
-//     // Apply hue rotation (convert hue to rotation angle)
-//     if (adjustments.hue !== 0) {
-//       // Hue is typically -180 to 180, convert to rotation
-//       const rotationAngle = (adjustments.hue / 180) * Math.PI;
+
+//     // Apply hue rotation
+//     if (adj.hue !== undefined && adj.hue !== 0) {
+//       const hueRadians = (adj.hue * Math.PI) / 180;
+//       const cosVal = Math.cos(hueRadians);
+//       const sinVal = Math.sin(hueRadians);
+      
 //       processedImage = processedImage.recomb([
-//         [Math.cos(rotationAngle), -Math.sin(rotationAngle), 0],
-//         [Math.sin(rotationAngle), Math.cos(rotationAngle), 0],
-//         [0, 0, 1]
+//         [
+//           cosVal + (0.143 * sinVal),
+//           -sinVal + (0.143 * cosVal),
+//           0.143 * (1 - cosVal) + (0.140 * sinVal)
+//         ],
+//         [
+//           sinVal - (0.283 * cosVal),
+//           cosVal + (0.283 * sinVal),
+//           0.283 * (1 - cosVal) - (0.283 * sinVal)
+//         ],
+//         [
+//           -0.283 * sinVal,
+//           0.283 * (1 - cosVal),
+//           cosVal + (0.283 * sinVal)
+//         ]
 //       ]);
+//       console.log('Applied hue rotation:', adj.hue);
 //     }
-    
+
 //     // Apply opacity
-//     if (adjustments.opacity !== 100) {
-//       const opacity = adjustments.opacity / 100;
-//       processedImage = processedImage.composite([{
-//         input: Buffer.from([255, 255, 255, 255 * opacity]),
-//         raw: { width: 1, height: 1, channels: 4 },
-//         tile: true,
-//         blend: 'dest-in'
-//       }]);
-//     }
-    
-//     // Apply temperature (warmth/coolness)
-//     if (adjustments.temperature !== 0) {
-//       // Temperature adjustment: positive = warmer, negative = cooler
-//       const temperature = adjustments.temperature / 100;
+//     if (adj.opacity !== undefined && adj.opacity !== 100) {
+//       const opacity = Math.max(0, Math.min(1, adj.opacity / 100));
       
-//       // Adjust red and blue channels based on temperature
-//       processedImage = processedImage.recomb([
-//         [1 + temperature, 0, 0],          // Increase red for warmth
-//         [0, 1, 0],
-//         [0, 0, 1 - temperature]           // Decrease blue for warmth
-//       ]);
+//       if (opacity < 1) {
+//         // Get image data with alpha channel
+//         const { data, info } = await processedImage
+//           .ensureAlpha() // Ensure alpha channel exists
+//           .raw()
+//           .toBuffer({ resolveWithObject: true });
+        
+//         // Modify alpha channel for opacity
+//         const newData = Buffer.alloc(data.length);
+//         for (let i = 0; i < data.length; i += info.channels) {
+//           // Copy RGB channels
+//           newData[i] = data[i];         // R
+//           newData[i + 1] = data[i + 1]; // G
+//           newData[i + 2] = data[i + 2]; // B
+//           // Apply opacity to alpha channel
+//           newData[i + 3] = info.channels === 4 ? Math.round(data[i + 3] * opacity) : Math.round(255 * opacity);
+//         }
+        
+//         processedImage = sharp(newData, {
+//           raw: {
+//             width: info.width,
+//             height: info.height,
+//             channels: info.channels
+//           }
+//         });
+//       }
+//       console.log('Applied opacity:', adj.opacity, 'Value:', opacity);
 //     }
-    
-//     // Apply zoom (crop and resize)
-//     if (adjustments.zoom !== 0) {
-//       const metadata = await processedImage.metadata();
-//       const zoomFactor = 1 + (adjustments.zoom / 100);
+
+//     // Apply temperature
+//     if (adj.temperature !== undefined && adj.temperature !== 0) {
+//       const tempAdjust = adj.temperature / 100;
       
-//       if (zoomFactor > 1) {
-//         // For zoom in: crop the center and resize to original dimensions
+//       if (tempAdjust > 0) {
+//         // Warmer (more red/orange)
+//         processedImage = processedImage.recomb([
+//           [1.0 + (tempAdjust * 0.2), 0.0, 0.0],
+//           [0.0, 1.0 - (tempAdjust * 0.1), 0.0],
+//           [0.0, 0.0, 1.0 - (tempAdjust * 0.2)]
+//         ]);
+//       } else {
+//         // Cooler (more blue)
+//         processedImage = processedImage.recomb([
+//           [1.0 + (tempAdjust * 0.1), 0.0, 0.0],
+//           [0.0, 1.0 + (tempAdjust * 0.1), 0.0],
+//           [0.0 - (tempAdjust * 0.2), 0.0, 1.0]
+//         ]);
+//       }
+//       console.log('Applied temperature:', adj.temperature);
+//     }
+
+//     // Apply zoom
+//     if (adj.zoom !== undefined && adj.zoom !== 0 && metadata.width && metadata.height) {
+//       const zoomFactor = 1 + (Math.abs(adj.zoom) / 100);
+      
+//       if (adj.zoom > 0) {
+//         // Zoom in: crop center
 //         const newWidth = Math.floor(metadata.width / zoomFactor);
 //         const newHeight = Math.floor(metadata.height / zoomFactor);
 //         const left = Math.floor((metadata.width - newWidth) / 2);
@@ -107,21 +158,20 @@
         
 //         processedImage = processedImage
 //           .extract({ left, top, width: newWidth, height: newHeight })
-//           .resize(metadata.width, metadata.height);
-//       } else {
-//         // For zoom out: not typically implemented as negative zoom
-//         // You might want to add padding instead
-//         console.warn('Negative zoom not implemented');
+//           .resize(metadata.width, metadata.height, {
+//             fit: 'fill',
+//             kernel: sharp.kernel.lanczos3
+//           });
 //       }
+//       console.log('Applied zoom:', adj.zoom);
 //     }
-    
+
 //     // Apply vignette effect
-//     if (adjustments.vignette !== 0) {
-//       const vignetteStrength = adjustments.vignette / 100;
-//       const metadata = await processedImage.metadata();
+//     if (adj.vignette !== undefined && adj.vignette > 0) {
+//       const vignetteStrength = adj.vignette / 200;
       
-//       // Create vignette mask
-//       const vignetteBuffer = await sharp({
+//       // Create vignette using composite operation
+//       const vignetteImage = await sharp({
 //         create: {
 //           width: metadata.width,
 //           height: metadata.height,
@@ -132,13 +182,12 @@
 //       .composite([{
 //         input: Buffer.from(`
 //           <svg width="${metadata.width}" height="${metadata.height}">
-//             <defs>
-//               <radialGradient id="grad" cx="50%" cy="50%" r="50%">
-//                 <stop offset="0%" stop-color="black" stop-opacity="0"/>
-//                 <stop offset="100%" stop-color="black" stop-opacity="${vignetteStrength}"/>
-//               </radialGradient>
-//             </defs>
-//             <rect width="100%" height="100%" fill="url(#grad)"/>
+//             <radialGradient id="vignette-grad" cx="50%" cy="50%" r="75%">
+//               <stop offset="0%" stop-color="white" stop-opacity="0"/>
+//               <stop offset="70%" stop-color="white" stop-opacity="0"/>
+//               <stop offset="100%" stop-color="black" stop-opacity="${vignetteStrength}"/>
+//             </radialGradient>
+//             <rect width="100%" height="100%" fill="url(#vignette-grad)"/>
 //           </svg>
 //         `),
 //         blend: 'over'
@@ -146,18 +195,24 @@
 //       .png()
 //       .toBuffer();
       
-//       // Apply vignette as overlay
 //       processedImage = processedImage.composite([{
-//         input: vignetteBuffer,
-//         blend: 'over'
+//         input: vignetteImage,
+//         blend: 'multiply'
 //       }]);
+//       console.log('Applied vignette:', adj.vignette);
 //     }
+
+//     // Convert to high quality PNG for download
+//     const processedBuffer = await processedImage.png({
+//       quality: 95,
+//       compressionLevel: 9,
+//       progressive: true
+//     }).toBuffer();
     
-//     // Convert to buffer and then to base64
-//     const processedBuffer = await processedImage.png().toBuffer();
 //     const processedBase64 = processedBuffer.toString('base64');
-    
 //     const processedImageData = `data:image/png;base64,${processedBase64}`;
+
+//     console.log('Image processing completed successfully');
     
 //     return Response.json({
 //       success: true,
@@ -192,12 +247,8 @@ export async function POST(request) {
       );
     }
     
-    if (!adjustments) {
-      return Response.json(
-        { success: false, error: 'No adjustments provided' },
-        { status: 400 }
-      );
-    }
+    // Set default adjustments if not provided
+    const adj = adjustments || {};
     
     // Extract base64 data from the data URL
     const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
@@ -207,91 +258,150 @@ export async function POST(request) {
     let processedImage = sharp(imageBuffer);
     const metadata = await processedImage.metadata();
     
-    // Apply brightness, contrast, and saturation
-    if (adjustments.brightness !== 0 || adjustments.contrast !== 0 || adjustments.saturation !== 0) {
+    console.log('Applying adjustments:', adj);
+
+    // 1. FIRST apply exposure
+    if (adj.exposure !== undefined && adj.exposure !== 0) {
+      const exposureGain = 1 + (adj.exposure / 100);
+      const exposureBias = -(128 * (exposureGain - 1)) * 0.5;
+      
+      processedImage = processedImage.linear(exposureGain, exposureBias);
+      console.log('Applied exposure:', adj.exposure);
+    }
+
+    // 2. APPLY CONTRAST - MATCH CSS FILTER BEHAVIOR
+    if (adj.contrast !== undefined && adj.contrast !== 0) {
+      console.log('Applying contrast:', adj.contrast);
+      
+      // Match CSS filter behavior: contrast(100% + adjustment)
+      // CSS: contrast(150%) = Sharp: contrast(1.5)
+      const cssContrastValue = 100 + adj.contrast;
+      const sharpContrastValue = cssContrastValue / 100;
+      
+      processedImage = processedImage.linear(sharpContrastValue, -(128 * (sharpContrastValue - 1)) / 2);
+      console.log('CSS contrast:', cssContrastValue + '%', 'Sharp contrast:', sharpContrastValue);
+    }
+
+    // 3. THEN apply brightness and saturation
+    if (adj.brightness !== undefined || adj.saturation !== undefined) {
+      // Match CSS filter behavior: brightness(100% + adjustment)
+      // CSS: brightness(150%) = Sharp: brightness(1.5)
+      const brightnessValue = adj.brightness !== undefined ? (100 + adj.brightness) / 100 : 1;
+      const saturationValue = adj.saturation !== undefined ? (100 + adj.saturation) / 100 : 1;
+      
       processedImage = processedImage.modulate({
-        brightness: adjustments.brightness !== 0 ? 1 + (adjustments.brightness / 100) : 1,
-        contrast: adjustments.contrast !== 0 ? 1 + (adjustments.contrast / 100) : 1,
-        saturation: adjustments.saturation !== 0 ? 1 + (adjustments.saturation / 100) : 1,
+        brightness: brightnessValue,
+        saturation: saturationValue,
       });
+      console.log('Applied brightness:', brightnessValue, 'saturation:', saturationValue);
     }
-    
-    // Apply exposure
-    if (adjustments.exposure !== 0) {
-      const exposure = Math.exp(adjustments.exposure / 100);
-      processedImage = processedImage.linear(exposure, -(128 * exposure) + 128);
-    }
-    
-    // Apply sharpness
-    if (adjustments.sharpness !== 0) {
-      const sharpness = adjustments.sharpness / 100;
-      processedImage = processedImage.sharpen({
-        sigma: 1 + sharpness,
-        m1: 0,
-        m2: 5 + (5 * sharpness),
-        x1: 3 + (2 * sharpness),
-      });
-    }
-    
-    // Advanced sharpening with control over radius (for AI Enhance)
-    if (adjustments.sharpness > 0 || adjustments.sharpen_radius) {
-      const sharpness = adjustments.sharpness / 100 || 0.5;
-      const radius = adjustments.sharpen_radius || 1.0;
+
+    // 4. THEN apply other adjustments
+    if (adj.sharpness !== undefined && adj.sharpness !== 0) {
+      const sharpnessIntensity = Math.abs(adj.sharpness) / 100;
       
       processedImage = processedImage.sharpen({
-        sigma: radius,
+        sigma: 0.5 + (sharpnessIntensity * 2),
         m1: 0,
-        m2: 5 + (5 * sharpness),
-        x1: 3 + (2 * sharpness),
+        m2: 2 + (sharpnessIntensity * 8),
+        x1: 1 + sharpnessIntensity
       });
+      console.log('Applied sharpness:', adj.sharpness);
     }
-    
+
     // Apply blur
-    if (adjustments.blur > 0) {
-      processedImage = processedImage.blur(adjustments.blur);
+    if (adj.blur !== undefined && adj.blur > 0) {
+      processedImage = processedImage.blur(adj.blur);
+      console.log('Applied blur:', adj.blur);
     }
-    
-    // Apply hue rotation (convert hue to rotation angle)
-    if (adjustments.hue !== 0) {
-      // Hue is typically -180 to 180, convert to rotation
-      const rotationAngle = (adjustments.hue / 180) * Math.PI;
+
+    // Apply hue rotation
+    if (adj.hue !== undefined && adj.hue !== 0) {
+      const hueRadians = (adj.hue * Math.PI) / 180;
+      const cosVal = Math.cos(hueRadians);
+      const sinVal = Math.sin(hueRadians);
+      
       processedImage = processedImage.recomb([
-        [Math.cos(rotationAngle), -Math.sin(rotationAngle), 0],
-        [Math.sin(rotationAngle), Math.cos(rotationAngle), 0],
-        [0, 0, 1]
+        [
+          cosVal + (0.143 * sinVal),
+          -sinVal + (0.143 * cosVal),
+          0.143 * (1 - cosVal) + (0.140 * sinVal)
+        ],
+        [
+          sinVal - (0.283 * cosVal),
+          cosVal + (0.283 * sinVal),
+          0.283 * (1 - cosVal) - (0.283 * sinVal)
+        ],
+        [
+          -0.283 * sinVal,
+          -0.283 * (1 - cosVal),
+          cosVal + (0.283 * sinVal)
+        ]
       ]);
+      console.log('Applied hue rotation:', adj.hue);
     }
-    
+
     // Apply opacity
-    if (adjustments.opacity !== 100) {
-      const opacity = adjustments.opacity / 100;
-      processedImage = processedImage.composite([{
-        input: Buffer.from([255, 255, 255, 255 * opacity]),
-        raw: { width: 1, height: 1, channels: 4 },
-        tile: true,
-        blend: 'dest-in'
-      }]);
-    }
-    
-    // Apply temperature (warmth/coolness)
-    if (adjustments.temperature !== 0) {
-      // Temperature adjustment: positive = warmer, negative = cooler
-      const temperature = adjustments.temperature / 100;
+    if (adj.opacity !== undefined && adj.opacity !== 100) {
+      const opacity = Math.max(0, Math.min(1, adj.opacity / 100));
       
-      // Adjust red and blue channels based on temperature
-      processedImage = processedImage.recomb([
-        [1 + temperature, 0, 0],          // Increase red for warmth
-        [0, 1, 0],
-        [0, 0, 1 - temperature]           // Decrease blue for warmth
-      ]);
+      if (opacity < 1) {
+        // Get image data with alpha channel
+        const { data, info } = await processedImage
+          .ensureAlpha() // Ensure alpha channel exists
+          .raw()
+          .toBuffer({ resolveWithObject: true });
+        
+        // Modify alpha channel for opacity
+        const newData = Buffer.alloc(data.length);
+        for (let i = 0; i < data.length; i += info.channels) {
+          // Copy RGB channels
+          newData[i] = data[i];         // R
+          newData[i + 1] = data[i + 1]; // G
+          newData[i + 2] = data[i + 2]; // B
+          // Apply opacity to alpha channel
+          newData[i + 3] = info.channels === 4 ? Math.round(data[i + 3] * opacity) : Math.round(255 * opacity);
+        }
+        
+        processedImage = sharp(newData, {
+          raw: {
+            width: info.width,
+            height: info.height,
+            channels: info.channels
+          }
+        });
+      }
+      console.log('Applied opacity:', adj.opacity);
     }
-    
-    // Apply zoom (crop and resize)
-    if (adjustments.zoom !== 0) {
-      const zoomFactor = 1 + (adjustments.zoom / 100);
+
+    // Apply temperature
+    if (adj.temperature !== undefined && adj.temperature !== 0) {
+      const tempAdjust = adj.temperature / 100;
       
-      if (zoomFactor > 1) {
-        // For zoom in: crop the center and resize to original dimensions
+      if (tempAdjust > 0) {
+        // Warmer (more red/orange)
+        processedImage = processedImage.recomb([
+          [1.0 + (tempAdjust * 0.2), 0.0, 0.0],
+          [0.0, 1.0 - (tempAdjust * 0.1), 0.0],
+          [0.0, 0.0, 1.0 - (tempAdjust * 0.2)]
+        ]);
+      } else {
+        // Cooler (more blue)
+        processedImage = processedImage.recomb([
+          [1.0 + (tempAdjust * 0.1), 0.0, 0.0],
+          [0.0, 1.0 + (tempAdjust * 0.1), 0.0],
+          [0.0 - (tempAdjust * 0.2), 0.0, 1.0]
+        ]);
+      }
+      console.log('Applied temperature:', adj.temperature);
+    }
+
+    // Apply zoom
+    if (adj.zoom !== undefined && adj.zoom !== 0 && metadata.width && metadata.height) {
+      const zoomFactor = 1 + (Math.abs(adj.zoom) / 100);
+      
+      if (adj.zoom > 0) {
+        // Zoom in: crop center
         const newWidth = Math.floor(metadata.width / zoomFactor);
         const newHeight = Math.floor(metadata.height / zoomFactor);
         const left = Math.floor((metadata.width - newWidth) / 2);
@@ -299,20 +409,20 @@ export async function POST(request) {
         
         processedImage = processedImage
           .extract({ left, top, width: newWidth, height: newHeight })
-          .resize(metadata.width, metadata.height);
-      } else {
-        // For zoom out: not typically implemented as negative zoom
-        // You might want to add padding instead
-        console.warn('Negative zoom not implemented');
+          .resize(metadata.width, metadata.height, {
+            fit: 'fill',
+            kernel: sharp.kernel.lanczos3
+          });
       }
+      console.log('Applied zoom:', adj.zoom);
     }
-    
+
     // Apply vignette effect
-    if (adjustments.vignette !== 0) {
-      const vignetteStrength = adjustments.vignette / 100;
+    if (adj.vignette !== undefined && adj.vignette > 0) {
+      const vignetteStrength = adj.vignette / 200;
       
-      // Create vignette mask
-      const vignetteBuffer = await sharp({
+      // Create vignette using composite operation
+      const vignetteImage = await sharp({
         create: {
           width: metadata.width,
           height: metadata.height,
@@ -323,13 +433,12 @@ export async function POST(request) {
       .composite([{
         input: Buffer.from(`
           <svg width="${metadata.width}" height="${metadata.height}">
-            <defs>
-              <radialGradient id="grad" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stop-color="black" stop-opacity="0"/>
-                <stop offset="100%" stop-color="black" stop-opacity="${vignetteStrength}"/>
-              </radialGradient>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#grad)"/>
+            <radialGradient id="vignette-grad" cx="50%" cy="50%" r="75%">
+              <stop offset="0%" stop-color="white" stop-opacity="0"/>
+              <stop offset="70%" stop-color="white" stop-opacity="0"/>
+              <stop offset="100%" stop-color="black" stop-opacity="${vignetteStrength}"/>
+            </radialGradient>
+            <rect width="100%" height="100%" fill="url(#vignette-grad)"/>
           </svg>
         `),
         blend: 'over'
@@ -337,45 +446,24 @@ export async function POST(request) {
       .png()
       .toBuffer();
       
-      // Apply vignette as overlay
       processedImage = processedImage.composite([{
-        input: vignetteBuffer,
-        blend: 'over'
+        input: vignetteImage,
+        blend: 'multiply'
       }]);
+      console.log('Applied vignette:', adj.vignette);
     }
+
+    // Convert to high quality PNG for download
+    const processedBuffer = await processedImage.png({
+      quality: 95,
+      compressionLevel: 9,
+      progressive: true
+    }).toBuffer();
     
-    // Professional AI Enhancements - Add these new adjustment handlers:
-    
-    // Clarity enhancement (local contrast boost)
-    if (adjustments.clarity > 0) {
-      const clarity = adjustments.clarity / 100;
-      processedImage = processedImage
-        .convolve({
-          width: 3,
-          height: 3,
-          kernel: [-clarity, -clarity, -clarity, -clarity, 1 + 8 * clarity, -clarity, -clarity, -clarity, -clarity]
-        });
-    }
-    
-    // Dehaze (reduces haze and improves clarity)
-    if (adjustments.dehaze > 0) {
-      const dehazeAmount = adjustments.dehaze / 100;
-      processedImage = processedImage.linear(1.0 + dehazeAmount, -128 * dehazeAmount);
-    }
-    
-    // Vibrance (smart saturation that protects skin tones)
-    if (adjustments.vibrance > 0) {
-      const vibrance = adjustments.vibrance / 50;
-      processedImage = processedImage.modulate({
-        saturation: 1 + vibrance
-      });
-    }
-    
-    // Convert to buffer and return
-    const processedBuffer = await processedImage.png().toBuffer();
     const processedBase64 = processedBuffer.toString('base64');
-    
     const processedImageData = `data:image/png;base64,${processedBase64}`;
+
+    console.log('Image processing completed successfully');
     
     return Response.json({
       success: true,

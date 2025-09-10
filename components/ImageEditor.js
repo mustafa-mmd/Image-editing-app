@@ -227,7 +227,7 @@
 
 
 
-// components/ImageEditor.js
+// components/ImageEditor.js - Fixed version
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
@@ -241,7 +241,7 @@ import {
   processImageAdjustments, 
   convertImageFormat,
   processBackgroundReplace,
-  applyAdjustmentsClientSide
+  processAIEnhance
 } from '@/lib/api';
 
 export default function ImageEditor() {
@@ -282,15 +282,12 @@ export default function ImageEditor() {
     try {
       const result = await processBackgroundRemove(currentImage);
       
-      // Check if the API call was successful
       if (result.success) {
-        // Store the transparent image for future background changes
         setTransparentImage(result.image);
         setBaseImage(result.image);
         setCurrentImage(result.image);
         updateResult(result);
       } else {
-        // Handle API error response
         console.error('Background removal failed:', result.error);
         alert(`Background removal failed: ${result.error}`);
       }
@@ -323,180 +320,82 @@ export default function ImageEditor() {
     }
   }, [state.transparentImage, state.baseImage, setLoading, updateResult, setBaseImage]);
 
-  const handleAdjustmentsChange = useCallback(async (newAdjustments) => {
+  const handleAdjustmentsChange = useCallback((newAdjustments) => {
     updateAdjustments(newAdjustments);
   }, [updateAdjustments]);
 
-  const handleApplyAdjustments = useCallback(async () => {
-    if (!state.baseImage) return;
-    
-    setLoading(true);
-    try {
-      // Try API first
-      const result = await processImageAdjustments(state.baseImage, state.adjustments);
-      
-      if (result.success) {
-        setBaseImage(result.image);
-        setCurrentImage(result.image);
-        updateResult(result);
-      } else {
-        // Fallback to client-side processing
-        console.warn('API adjustment failed, using client-side fallback:', result.error);
-        
-        const img = new Image();
-        img.onload = async () => {
-          try {
-            const adjustedImage = await applyAdjustmentsClientSide(img, state.adjustments);
-            setBaseImage(adjustedImage);
-            setCurrentImage(adjustedImage);
-            updateResult({ success: true, image: adjustedImage });
-          } catch (error) {
-            console.error('Client-side adjustment failed:', error);
-            alert('Failed to apply adjustments to image');
-          } finally {
-            setLoading(false);
-          }
-        };
-        
-        img.onerror = () => {
-          console.error('Failed to load image for client-side processing');
-          setLoading(false);
-        };
-        
-        img.src = state.baseImage;
-        return; // Don't setLoading(false) here as it's handled in the onload/onerror
-      }
-    } catch (error) {
-      console.error('Applying adjustments failed:', error);
-      alert('Failed to apply adjustments: ' + error.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [state.baseImage, state.adjustments, setLoading, setBaseImage, updateResult]);
+  // components/ImageEditor.js - Fixed handleDownload
+const handleDownload = useCallback(async () => {
+  if (!state.baseImage) return;
+  
+  setLoading(true);
+  try {
+     
 
-  const handleDownload = useCallback(async () => {
-    if (!state.baseImage) return;
+    // Apply ALL current adjustments to base image
+    const adjustedResult = await processImageAdjustments(state.baseImage, state.adjustments);
     
-    setLoading(true);
-    try {
-      // First try to use the API for all adjustments
-      const result = await processImageAdjustments(state.baseImage, state.adjustments);
+    if (adjustedResult.success) {
+      const formatResult = await convertImageFormat(adjustedResult.image, state.format);
       
-      if (result.success) {
-        // Then convert to the desired format
-        const formatResult = await convertImageFormat(result.image, state.format);
-        if (formatResult.success && formatResult.image) {
-          const link = document.createElement('a');
-          link.href = formatResult.image;
-          link.download = `edited-image.${state.format}`;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-        }
-      } else {
-        // Fallback to client-side processing if API fails
-        console.warn('API adjustment failed, using client-side fallback:', result.error);
-        
-        // Create an image element to process adjustments client-side
-        const img = new Image();
-        img.onload = async () => {
-          try {
-            const adjustedImage = await applyAdjustmentsClientSide(img, state.adjustments);
-            
-            // Convert to desired format
-            const formatResult = await convertImageFormat(adjustedImage, state.format);
-            if (formatResult.success && formatResult.image) {
-              const link = document.createElement('a');
-              link.href = formatResult.image;
-              link.download = `edited-image.${state.format}`;
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-            }
-          } catch (error) {
-            console.error('Client-side adjustment failed:', error);
-            alert('Failed to apply adjustments to image');
-          } finally {
-            setLoading(false);
-          }
-        };
-        
-        img.onerror = () => {
-          console.error('Failed to load image for client-side processing');
-          setLoading(false);
-        };
-        
-        img.src = state.baseImage;
+      if (formatResult.success && formatResult.image) {
+        const link = document.createElement('a');
+        link.href = formatResult.image;
+        link.download = `ai-enhanced-photo.${state.format}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
       }
-    } catch (error) {
-      console.error('Download failed:', error);
-      alert('Download failed: ' + error.message);
-    } finally {
-      setLoading(false);
     }
-  }, [state.baseImage, state.adjustments, state.format, setLoading]);
+  } catch (error) {
+    console.error('Download failed:', error);
+    alert('Download failed. Please try again.');
+  } finally {
+    setLoading(false);
+  }
+}, [state.baseImage, state.adjustments, state.format, setLoading]);
 
-  const handleAIEnhance = useCallback(async () => {
-    if (!state.baseImage) return;
+  // handleAIEnhance function
+// components/ImageEditor.js - FIXED handleAIEnhance function
+const handleAIEnhance = useCallback(async () => {
+  if (!state.baseImage) return;
+  
+  setLoading(true);
+  try {
+    const result = await processAIEnhance(state.baseImage);
     
-    setLoading(true);
-    
-    // Add a loading message that shows progress
-    const loadingMessages = [
-      "Analyzing image composition...",
-      "Enhancing colors and contrast...",
-      "Applying professional sharpening...",
-      "Adding final touches..."
-    ];
-    
-    let messageIndex = 0;
-    const messageInterval = setInterval(() => {
-      // This is where you'd update a loading message in your UI
-      console.log(loadingMessages[messageIndex]);
-      messageIndex = (messageIndex + 1) % loadingMessages.length;
-    }, 800);
-    
-    try {
-      // Professional multi-stage enhancement
-      const enhancements = {
-        brightness: 18,
-        contrast: 32,
-        saturation: 22,
-        sharpness: 38,
-        exposure: 7,
-        temperature: 6,
-        vibrance: 20,
-        clarity: 28,
-        dehaze: 12,
-        vignette: 15
-      };
+    if (result.success) {
+      setBaseImage(result.image);
+      setCurrentImage(result.image);
+      updateResult(result);
       
-      const result = await processImageAdjustments(state.baseImage, enhancements);
-      
-      if (result.success) {
-        clearInterval(messageInterval);
-        
-        updateAdjustments(enhancements);
-        setBaseImage(result.image);
-        setCurrentImage(result.image);
-        updateResult(result);
-        
-        // Create a "wow" effect with a success notification
-        alert(' AI Professional Enhancement Complete! \nYour image has been transformed with studio-quality adjustments.');
-      }
-    } catch (error) {
-      console.error('AI enhancement failed:', error);
-      alert('AI enhancement failed. Please try again.');
-    } finally {
-      clearInterval(messageInterval);
-      setLoading(false);
+      // REMOVED the automatic adjustments - AI enhancement should stand alone
+      console.log('AI enhancement successful. Source:', result.source);
+    } else {
+      console.error('AI enhancement failed:', result.error);
+      alert(`AI enhancement failed: ${result.error || 'Unknown error'}`);
     }
-  }, [state.baseImage, setLoading, updateAdjustments, setBaseImage, updateResult]);
+  } catch (error) {
+    console.error('AI enhancement failed:', error);
+    alert(`AI enhancement failed: ${error.message}`);
+  } finally {
+    setLoading(false);
+  }
+}, [state.baseImage, setLoading, updateResult, setBaseImage]);
 
   const handleReset = useCallback(() => {
     resetAdjustments();
-    setCurrentImage(state.baseImage);
-  }, [resetAdjustments, state.baseImage]);
+    // Reset to base image (either original or transparent background)
+    setCurrentImage(state.transparentImage || state.originalImage);
+  }, [resetAdjustments, state.transparentImage, state.originalImage]);
+
+  const handleCompleteReset = useCallback(() => {
+    // This would reset everything including background removal
+    setCurrentImage(state.originalImage);
+    setBaseImage(state.originalImage);
+    setTransparentImage(null);
+    resetAdjustments();
+  }, [state.originalImage, resetAdjustments, setBaseImage, setTransparentImage]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 py-8">
@@ -534,10 +433,8 @@ export default function ImageEditor() {
                   onDownload={handleDownload}
                   onReset={handleReset}
                   onApplyAI={handleAIEnhance}
-                  onApplyAdjustments={handleApplyAdjustments}
                   isLoading={state.isLoading}
                   hasImage={!!state.originalImage}
-                  isAIEnhanced={state.isAIEnhanced}
                 />
               </div>
             </div>
