@@ -121,6 +121,7 @@ const initialAdjustments = {
   zoom: 0,
   temperature: 0,
   vignette: 0
+  
 };
 
 const initialState = {

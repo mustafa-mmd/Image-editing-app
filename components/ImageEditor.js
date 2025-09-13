@@ -1,6 +1,7 @@
 
 // components/ImageEditor.js - Fixed version
 'use client';
+  
 
 import { useState, useCallback, useEffect } from 'react';
 import ImageUpload from './ImageUpload';
@@ -96,7 +97,7 @@ export default function ImageEditor() {
     updateAdjustments(newAdjustments);
   }, [updateAdjustments]);
 
-  // components/ImageEditor.js - Fixed handleDownload
+  //  handleDownload
 const handleDownload = useCallback(async () => {
   if (!state.baseImage) return;
   
@@ -127,8 +128,8 @@ const handleDownload = useCallback(async () => {
   }
 }, [state.baseImage, state.adjustments, state.format, setLoading]);
 
-  // handleAIEnhance function
-// components/ImageEditor.js - FIXED handleAIEnhance function
+
+
 const handleAIEnhance = useCallback(async () => {
   if (!state.baseImage) return;
   

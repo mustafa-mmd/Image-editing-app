@@ -203,6 +203,9 @@ export default function AdjustmentsPanel({
             onChange={(value) => onAdjustmentsChange({ vignette: value })}
             disabled={isLoading}
           />
+          
+
+
         </div>
       )}
 
@@ -303,3 +306,8 @@ export default function AdjustmentsPanel({
     </div>
   );
 }
+
+
+
+
+
